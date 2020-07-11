@@ -191,7 +191,7 @@ cga_putc(int c)
 		break;
 	}
 
-	// What is the purpose of this?
+    // Shift up the screen by one line
 	if (crt_pos >= CRT_SIZE) {
 		int i;
 

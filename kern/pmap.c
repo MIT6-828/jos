@@ -180,6 +180,7 @@ mem_init(void)
 	//      (ie. perm = PTE_U | PTE_P)
 	//    - pages itself -- kernel RW, user NONE
 	// Your code goes here:
+    boot_map_region(kern_pgdir, UPAGES, npages * sizeof *pages, PADDR(pages), PTE_U);
 
 	//////////////////////////////////////////////////////////////////////
 	// Use the physical memory that 'bootstack' refers to as the kernel
@@ -192,6 +193,7 @@ mem_init(void)
 	//       overwrite memory.  Known as a "guard page".
 	//     Permissions: kernel RW, user NONE
 	// Your code goes here:
+    boot_map_region(kern_pgdir, KSTACKTOP-KSTKSIZE, KSTKSIZE, PADDR(bootstack), PTE_W);
 
 	//////////////////////////////////////////////////////////////////////
 	// Map all of physical memory at KERNBASE.
@@ -201,6 +203,7 @@ mem_init(void)
 	// we just set up the mapping anyway.
 	// Permissions: kernel RW, user NONE
 	// Your code goes here:
+    boot_map_region(kern_pgdir, KERNBASE, (2^32)-KERNBASE, 0, PTE_W);
 
 	// Check that the initial page directory has been set up correctly.
 	check_kern_pgdir();
@@ -222,6 +225,25 @@ mem_init(void)
 	cr0 |= CR0_PE|CR0_PG|CR0_AM|CR0_WP|CR0_NE|CR0_MP;
 	cr0 &= ~(CR0_TS|CR0_EM);
 	lcr0(cr0);
+
+    cprintf("\n---- Non-exists physical page access test start ----\n");
+    // if access a higher address, we won't get the expected result
+    // TODO ? why no page fault here ?
+    int *addr = (int*)0xFFFF0000;
+    cprintf("read the value stored at address %p: %d\n", addr, *addr);
+    cprintf("change it to 1: *addr = 1\n");
+    *addr = 1000;
+    //memset(addr, 1, 4);
+    cprintf("read the value again: %d\n", *addr);
+
+    addr = (int*)0xF5D00000;
+    cprintf("read the value stored at address %p: %d\n", addr, *addr);
+    cprintf("change it to 1: *addr = 1\n");
+    //memset(addr, 1, 4);
+    *addr = 134;
+    cprintf("read the value again: %d\n", *addr);
+    cprintf("\n---- Non-exists physical page access test end ----\n\n");
+
 
 	// Some more checks, only possible after kern_pgdir is installed.
 	check_page_installed_pgdir();
@@ -388,9 +410,12 @@ static void
 boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm)
 {
 	// Fill this function in
-    pte_t *pte = pgdir_walk(pgdir, (const void *)va, 1);
     for (int i = 0 ; i < size / PGSIZE ; i++) {
-        pte[i] = (pa + i * PGSIZE) | perm | PTE_P;
+        pte_t *pte = pgdir_walk(pgdir, (char *)va + i*PGSIZE, 1);
+        if (pte)
+            *pte = (int)((char*)pa + i*PGSIZE) | perm | PTE_P;
+        else
+            cprintf("page missing-%d", i);
     }
 }
 
@@ -671,7 +696,6 @@ check_kern_pgdir(void)
 	n = ROUNDUP(npages*sizeof(struct PageInfo), PGSIZE);
 	for (i = 0; i < n; i += PGSIZE)
 		assert(check_va2pa(pgdir, UPAGES + i) == PADDR(pages) + i);
-
 
 	// check phys mem
 	for (i = 0; i < npages * PGSIZE; i += PGSIZE)
